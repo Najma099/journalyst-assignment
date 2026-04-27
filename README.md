@@ -157,21 +157,34 @@ Express + Multer — stable, well-typed, minimal footprint. The HTTP layer is th
 ## Project Structure
 
 ```
-src/
-  index.ts            # Server entry point
-  app.ts              # Express app + POST /import route
-  importService.ts    # Core orchestration (detect → parse → respond)
-  types/
-    trade.ts          # Zod schema, Trade type, ParseResult, ImportResponse
-  parsers/
-    registry.ts       # Broker registry + auto-detection
-    csvUtils.ts       # CSV parsing utilities
-    zerodha.ts        # Zerodha parser
-    ibkr.ts           # IBKR parser
-tests/
-  fixtures.ts         # Sample CSVs
-  zerodha.test.ts     # Zerodha parser unit tests
-  ibkr.test.ts        # IBKR parser unit tests
-  detection.test.ts   # Auto-detection unit tests
-  api.test.ts         # End-to-end API integration tests
+├── Dockerfile
+├── jest.config.js
+├── package-lock.json
+├── package.json
+├── README.md
+├── src
+│   ├── __test__
+│   │   ├── broker-data.ts
+│   │   └── broker-import.test.ts
+│   ├── app.ts
+│   ├── controllers
+│   │   └── broker-import.controller.ts
+│   ├── core
+│   │   └── broker
+│   │       ├── detect-broker.ts
+│   │       ├── ibkr.ts
+│   │       ├── index.ts
+│   │       └── zerodha.ts
+│   ├── index.ts
+│   ├── middleware
+│   │   ├── error-handler.middleware.ts
+│   │   └── extract-file.middleware.ts
+│   ├── schema
+│   │   └── broker-trade.ts
+│   ├── test.ts
+│   ├── types
+│   │   └── broker.ts
+│   └── utils
+│       └── csv-utils.ts
+└── tsconfig.json
 ```
