@@ -1,26 +1,174 @@
+# Broker CSV Trade Import Service
 
+A TypeScript service that normalises broker trade export CSVs into a standardised format.
 
-# Indian style data:
+---
 
-| Symbol      | ISIN           | Trade Date   | Trade Type | Quantity | Price   | Trade ID | Order ID | Exchange | Segment |
-|-------------|----------------|--------------|------------|----------|---------|----------|----------|----------|---------|
-| RELIANCE    | INE002A01018  | 01-04-2026   | buy        | 10       | 2450.50 | TRD001   | ORD001   | NSE      | EQ      |
-| INFY        | INE009A01021  | 01-04-2026   | sell       | 25       | 1520.75 | TRD002   | ORD002   | NSE      | EQ      |
-| TATAMOTORS  | INE155A01022  | 02-04-2026   | buy        | 50       | 650.00  | TRD003   | ORD003   | BSE      | EQ      |
-| HDFCBANK    |                | 03-04-2026   | buy        | 15       | 1680.30 | TRD004   | ORD004   | NSE      | EQ      |
-| SBIN        | INE062A01020  | 03-04-2026   | SELL       | 30       | 820.45  | TRD005   | ORD005   | NSE      | EQ      |
-| RELIANCE    | INE002A01018  | invalid_date | buy        | 10       | 2480.00 | TRD006   | ORD006   | NSE      | EQ      |
-| WIPRO       | INE075A01022  | 05-04-2026   | buy        | -5       | 450.00  | TRD007   | ORD007   | NSE      | EQ      |
+## Quick Start
 
+### Prerequisites
+- Node.js ≥ 18
+- npm ≥ 9
 
-# International data
+### Install dependencies
 
-| Trade ID   | Account ID | Symbol   | Date Time              | Buy/Sell | Quantity | Trade Price | Currency | Commission | Net Amount | Asset Class |
-|------------|------------|----------|------------------------|----------|----------|-------------|----------|------------|------------|-------------|
-| U1234-001  | U1234567   | AAPL     | 2026-04-01T14:30:00Z   | BOT      | 100      | 185.50      | USD      | -1.00      | 18549.00   | STK         |
-| U1234-002  | U1234567   | MSFT     | 2026-04-01T15:45:00Z   | SLD      | 50       | 420.25      | USD      | -1.00      | -21011.50  | STK         |
-| U1234-003  | U1234567   | EUR.USD  | 2026-04-02T09:00:00Z   | BOT      | 10000    | 1.0850      | USD      | -2.00      | 10848.00   | CA          |
-| SH         |            |          |                        |          |          |             |          |            |            |             |
-| U1234-004  | U1234567   | TSLA     | 04/03/2026             | BOT      | 25       | 245.00      | USD      | -1.00      | 6124.00    | STK         |
-| U1234-005  | U1234567   | AMZN     | 2026-04-03T16:20:00Z   | SLD      | 0        | 190.75      | USD      | -1.00      | 0.00       | STK         |
-| U1234-006  | U1234567   | GOOGL    | 2026-04-04T10:15:00Z   | BOT      | 30       | 175.50      | USD      |            | 5265.00    | STK         |
+```bash
+npm install
+```
+
+### Run the server (development)
+
+```bash
+npm run dev
+# Server starts at http://localhost:3000
+```
+
+### Run the server (production build)
+
+```bash
+npm run build
+npm start
+```
+
+### Run tests
+
+```bash
+npm test
+```
+
+---
+
+## API
+
+### `POST /import`
+
+Upload a broker CSV file and receive normalised trades.
+
+**Request** — `multipart/form-data`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file` | File | The broker CSV file |
+
+**Example with curl**
+
+```bash
+curl -X POST http://localhost:3000/import \
+  -F "file=@zerodha_trades.csv"
+```
+
+**Response shape**
+
+```json
+{
+  "broker": "zerodha",
+  "summary": {
+    "total": 7,
+    "valid": 5,
+    "skipped": 2
+  },
+  "trades": [
+    {
+      "symbol": "RELIANCE",
+      "side": "BUY",
+      "quantity": 10,
+      "price": 2450.50,
+      "totalAmount": 24505,
+      "currency": "INR",
+      "executedAt": "2026-04-01T00:00:00.000Z",
+      "broker": "zerodha",
+      "rawData": { "trade_id": "TRD001", "..." : "..." }
+    }
+  ],
+  "errors": [
+    { "row": 7, "reason": "Invalid date: 'invalid_date'" },
+    { "row": 8, "reason": "Quantity must be positive, got -5" }
+  ]
+}
+```
+
+**Error responses**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | No file uploaded |
+| 400 | Empty file |
+| 400 | Unrecognised CSV format |
+| 500 | Internal server error |
+
+---
+
+## Supported Brokers
+
+| Broker | Detection columns |
+|--------|-------------------|
+| `zerodha` | `symbol`, `trade_date`, `trade_type`, `quantity`, `price`, `exchange` |
+| `ibkr` | `TradeID`, `Symbol`, `DateTime`, `Quantity`, `TradePrice`, `Currency` |
+
+Broker detection is automatic — the service inspects the CSV header row and matches it against the registry.
+
+---
+
+## Design Decisions
+
+### 1. Error-first architecture
+
+Each row parser returns a `ParseResult` — either `{ ok: true, trade }` or `{ ok: false, reason }`. No exceptions escape the per-row boundary. This means a single bad row never prevents valid rows from being returned. Financial data is dirty; partial success is the norm.
+
+### 2. Broker detection pattern (easy to extend)
+
+All broker parsers are registered in `src/core/broker/detect-broker.ts` as `BrokerParser` objects:
+
+```ts
+interface BrokerParser {
+  name: string;
+  requiredHeaders: string[];   // used for auto-detection
+  parse: (csvText: string) => ParseResult[];
+}
+```
+
+**To add Broker C:**
+1. Create `src/core/broker/brokerC.ts` and export a `parseBrokerC` function.
+2. Add one entry to the `BROKER_REGISTRY` array in `registry.ts`.
+3. Done — no other files change.
+
+### 3. `rawData` stores everything
+
+Every original column from the CSV is stored verbatim in `rawData`, including extra columns the schema doesn't know about (e.g. IBKR's `Commission`, `AccountID`, `AssetClass`). Nothing is thrown away.
+
+### 4. `totalAmount` sign convention
+
+SELL trades produce a negative `totalAmount` (`-(quantity × price)`). This matches standard double-entry bookkeeping — cash flows in on a sell mean the asset position flows out.
+
+### 5. Date normalisation
+
+- **Zerodha** uses `DD-MM-YYYY` with no time. We emit UTC midnight (`T00:00:00.000Z`) since IST timezone is not in the CSV.
+- **IBKR** uses ISO 8601 with timezone for most rows, and `MM/DD/YYYY` (no time) for some. We handle both and normalise to ISO 8601.
+
+### 6. Framework choice
+
+Express + Multer — stable, well-typed, minimal footprint. The HTTP layer is thin on purpose; all logic lives in `importService.ts` and the parser files, making them testable without spinning up a server.
+
+---
+
+## Project Structure
+
+```
+src/
+  index.ts            # Server entry point
+  app.ts              # Express app + POST /import route
+  importService.ts    # Core orchestration (detect → parse → respond)
+  types/
+    trade.ts          # Zod schema, Trade type, ParseResult, ImportResponse
+  parsers/
+    registry.ts       # Broker registry + auto-detection
+    csvUtils.ts       # CSV parsing utilities
+    zerodha.ts        # Zerodha parser
+    ibkr.ts           # IBKR parser
+tests/
+  fixtures.ts         # Sample CSVs
+  zerodha.test.ts     # Zerodha parser unit tests
+  ibkr.test.ts        # IBKR parser unit tests
+  detection.test.ts   # Auto-detection unit tests
+  api.test.ts         # End-to-end API integration tests
+```
