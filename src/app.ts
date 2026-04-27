@@ -9,8 +9,13 @@ app.get("/", (_, res) => {
   res.status(200).send("Journalyst - Take Home Assignment");
 });
 
+
 app.use("/import", extractFile.single("file"), brokerImport);
 
+app.use((req, res, next) => {
+  res.status(404);
+  next(new Error("Route not found"));
+})
 // Error handler
 app.use(errorHandler);
 
